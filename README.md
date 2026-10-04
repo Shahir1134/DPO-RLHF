@@ -133,13 +133,13 @@ $$
 Its probability is the product of per-token probabilities:
 
 $$
-\pi_\theta(y \mid x) = \prod_{t=1}^{T} \pi_\theta(y_t \mid x, y_{<t})
+\pi_\theta(y \mid x) = \prod_{t=1}^{T} \pi_\theta(y_t \mid x, y_{\lt t})
 $$
 
 In practice we work with log-probabilities, which turn the product into a sum:
 
 $$
-\log \pi_\theta(y \mid x) = \sum_{t=1}^{T} \log \pi_\theta(y_t \mid x, y_{<t})
+\log \pi_\theta(y \mid x) = \sum_{t=1}^{T} \log \pi_\theta(y_t \mid x, y_{\lt t})
 $$
 
 These sequence-level log-probabilities feed into the preference margin and loss above.
