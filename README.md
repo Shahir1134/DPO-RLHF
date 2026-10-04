@@ -1,29 +1,27 @@
 # Direct Preference Optimization (DPO)
 
-A hands-on implementation of **Direct Preference Optimization (DPO)** for aligning Large Language Models using preference data.
+A hands-on implementation of **Direct Preference Optimization (DPO)** for aligning Large Language Models with preference data.
 
-The goal of this project was not just to implement DPO, but to understand the mathematics behind the objective and connect it to the actual training process.
+The goal was not just to implement DPO, but to understand the math behind the objective and connect it to the actual training process.
 
 ---
 
 ## What is DPO?
 
-Given a prompt \(x\), suppose we have two responses:
+Given a prompt $x$, suppose we have two responses:
 
-- \(y_w\) → preferred/chosen response
-- \(y_l\) → rejected response
+- $y_w$: the preferred (chosen) response
+- $y_l$: the rejected response
 
-DPO directly optimizes the language model to prefer \(y_w\) over \(y_l\).
+DPO directly optimizes the language model to prefer $y_w$ over $y_l$, with no separate reward model and no RL loop.
 
-Unlike the traditional PPO-based RLHF pipeline, DPO does not require an explicit reward-model + PPO optimization loop.
-
-### PPO-based RLHF
+**PPO-based RLHF**
 
 ```text
 Preference Data → Reward Model → Reward → PPO → Updated LLM
 ```
 
-### DPO
+**DPO**
 
 ```text
 Preference Data → DPO Objective → Updated LLM
@@ -32,105 +30,52 @@ Preference Data → DPO Objective → Updated LLM
 ---
 
 ## DPO Objective
-The core DPO loss is:
 
 $$
-\mathcal{L}_{DPO}
-=
--\mathbb{E}
-\left[
-\log\sigma
-\left(
-\beta
-\left[
-\log
-\frac{\pi_\theta(y_w|x)}
-{\pi_{ref}(y_w|x)}
--
-\log
-\frac{\pi_\theta(y_l|x)}
-{\pi_{ref}(y_l|x)}
-\right]
-\right)
-\right]
+\mathcal{L}_{DPO} = -\mathbb{E}\left[\log \sigma\left(\beta \left[\log \frac{\pi_\theta(y_w \mid x)}{\pi_{ref}(y_w \mid x)} - \log \frac{\pi_\theta(y_l \mid x)}{\pi_{ref}(y_l \mid x)}\right]\right)\right]
 $$
-
-### What does each term mean?
 
 | Term | Meaning |
 |---|---|
 | $x$ | Prompt |
-| $y_w$ | Chosen / preferred response |
+| $y_w$ | Chosen (preferred) response |
 | $y_l$ | Rejected response |
 | $\pi_\theta$ | Trainable policy model |
-| $\pi_{ref}$ | Frozen reference model |
-| $\beta$ | Controls the strength of the preference objective |
+| $\pi_{ref}$ | Frozen reference model (the "before training" baseline) |
+| $\beta$ | Strength of the preference objective (how tightly the policy is tied to the reference) |
 | $\sigma$ | Sigmoid function |
-| $\mathcal{L}_{DPO}$ | DPO loss |
-
-The reference model provides a baseline, while the policy model is updated during training.
-
-
-### What does each term mean?
-
-| Term | Meaning |
-|---|---|
-| \(x\) | Prompt |
-| \(y_w\) | Chosen/preferred response |
-| \(y_l\) | Rejected response |
-| \(\pi_\theta\) | Trainable policy model |
-| \(\pi_{ref}\) | Frozen reference model |
-| \(\beta\) | Controls the strength of the preference objective |
-| \(\sigma\) | Sigmoid function |
-| \(\mathcal{L}_{DPO}\) | DPO loss |
-
-The reference model acts as a baseline, while the policy model is updated.
 
 ---
 
 ## Breaking Down the Formula
 
-For the chosen response:
+**Step 1: log-ratio for each response** (how much has the model moved?)
 
-\[
-\Delta_w =
-\log
-\frac{\pi_\theta(y_w|x)}
-{\pi_{ref}(y_w|x)}
-\]
+$$
+\Delta_w = \log \frac{\pi_\theta(y_w \mid x)}{\pi_{ref}(y_w \mid x)}
+\qquad
+\Delta_l = \log \frac{\pi_\theta(y_l \mid x)}{\pi_{ref}(y_l \mid x)}
+$$
 
-For the rejected response:
+**Step 2: preference margin**
 
-\[
-\Delta_l =
-\log
-\frac{\pi_\theta(y_l|x)}
-{\pi_{ref}(y_l|x)}
-\]
+$$
+z = \beta \, (\Delta_w - \Delta_l)
+$$
 
-DPO compares these two values:
+**Step 3: squash into (0, 1) with the sigmoid**
 
-\[
-z = \beta(\Delta_w-\Delta_l)
-\]
+$$
+\sigma(z) = \frac{1}{1 + e^{-z}}
+$$
 
-This creates the **preference margin**.
+**Step 4: loss**
 
-The sigmoid converts the margin into a value between 0 and 1:
+$$
+\mathcal{L}_{DPO} = -\log \sigma(z)
+$$
 
-\[
-\sigma(z)=\frac{1}{1+e^{-z}}
-\]
-
-Finally:
-
-\[
-\boxed{
-L_{DPO}=-\log\sigma(z)
-}
-\]
-
-Minimizing this loss encourages the policy to favor the chosen response over the rejected response.
+Minimizing this loss pushes up the chosen response and pushes down the rejected one, relative to the reference model.
 
 ---
 
@@ -138,86 +83,66 @@ Minimizing this loss encourages the policy to favor the chosen response over the
 
 Assume:
 
-\[
-\pi_\theta(y_w|x)=0.6
-\]
+| | Chosen $y_w$ | Rejected $y_l$ |
+|---|---|---|
+| $\pi_\theta$ | 0.6 | 0.2 |
+| $\pi_{ref}$ | 0.4 | 0.3 |
 
-\[
-\pi_{ref}(y_w|x)=0.4
-\]
+and $\beta = 0.5$.
 
-\[
-\pi_\theta(y_l|x)=0.2
-\]
+$$
+\Delta_w = \ln\frac{0.6}{0.4} \approx +0.4055
+\qquad
+\Delta_l = \ln\frac{0.2}{0.3} \approx -0.4055
+$$
 
-\[
-\pi_{ref}(y_l|x)=0.3
-\]
+$$
+z = 0.5\,\bigl(0.4055 - (-0.4055)\bigr) \approx 0.4055
+\qquad
+\sigma(z) \approx 0.60
+$$
 
-and:
+$$
+\mathcal{L}_{DPO} = -\log(0.6) \approx \mathbf{0.511}
+$$
 
-\[
-\beta=0.5
-\]
+### Sanity check
 
-Chosen response:
+If the model is identical to the reference ($\pi_\theta = \pi_{ref}$), both log-ratios are $\log 1 = 0$, so $z = 0$, $\sigma(0) = 0.5$, and the loss is $-\log(0.5) = 0.693$. This is the starting loss.
 
-\[
-\ln\left(\frac{0.6}{0.4}\right)
-\approx0.4055
-\]
+Our example gives **0.511 < 0.693**, so the model has moved toward the chosen response and away from the rejected one.
 
-Rejected response:
+### Effect of $\beta$ (same margin of 0.811)
 
-\[
-\ln\left(\frac{0.2}{0.3}\right)
-\approx-0.4055
-\]
-
-Therefore:
-
-\[
-z=0.5(0.4055-(-0.4055))
-\approx0.4055
-\]
-
-\[
-\sigma(z)\approx0.60
-\]
-
-\[
-\boxed{L_{DPO}\approx0.511}
-\]
+| $\beta$ | $\sigma(\beta \cdot 0.811)$ | Loss |
+|---|---|---|
+| 0.1 | 0.520 | 0.653 |
+| 0.5 | 0.600 | 0.511 |
+| 1.0 | 0.692 | 0.368 |
 
 ---
 
 ## How This Maps to an LLM
 
-A response consists of multiple tokens:
+A response is a sequence of tokens:
 
-\[
-y=(y_1,y_2,\ldots,y_T)
-\]
+$$
+y = (y_1, y_2, \ldots, y_T)
+$$
 
-Its probability is:
+Its probability is the product of per-token probabilities:
 
-\[
-\pi_\theta(y|x)
-=
-\prod_{t=1}^{T}
-\pi_\theta(y_t|x,y_{<t})
-\]
+$$
+\pi_\theta(y \mid x) = \prod_{t=1}^{T} \pi_\theta(y_t \mid x, y_{<t})
+$$
 
-In practice, we work with log probabilities:
+In practice we work with log-probabilities, which turn the product into a sum:
 
-\[
-\log\pi_\theta(y|x)
-=
-\sum_{t=1}^{T}
-\log\pi_\theta(y_t|x,y_{<t})
-\]
+$$
+\log \pi_\theta(y \mid x) = \sum_{t=1}^{T} \log \pi_\theta(y_t \mid x, y_{<t})
+$$
 
-These sequence-level log probabilities are then used to calculate the DPO preference margin and loss.
+These sequence-level log-probabilities feed into the preference margin and loss above.
 
 ---
 
@@ -230,11 +155,11 @@ Prompt + Chosen + Rejected
         ↓
 Tokenization
         ↓
-Policy Model + Reference Model
+Policy Model + Reference Model (frozen)
         ↓
-Sequence Log Probabilities
+Sequence Log-Probabilities
         ↓
-Relative Log Probabilities
+Log-Ratios (policy vs reference)
         ↓
 Preference Margin
         ↓
@@ -245,63 +170,37 @@ Backpropagation
 Updated Policy
 ```
 
-The **reference model remains frozen** while the policy model is trained.
-
 ---
 
 ## Implementation
 
-This project focuses on implementing and understanding:
+This project covers:
 
 - Preference-pair training
 - Policy and reference models
-- Token-level log probabilities
-- Sequence-level log probabilities
-- Policy/reference probability ratios
-- DPO preference margin
-- DPO loss
+- Token-level and sequence-level log-probabilities
+- Policy/reference log-ratios
+- DPO preference margin and loss
 - Gradient-based optimization
 
-### Tech Stack
-
-- Python
-- PyTorch
-- Hugging Face Transformers
-- Hugging Face TRL
-- Hugging Face Datasets
-- Accelerate
+**Tech stack:** Python, PyTorch, Hugging Face Transformers, TRL, Datasets, Accelerate
 
 ---
 
 ## Key Idea
 
-DPO can be summarized as:
+> **Make the model prefer what humans preferred.**
 
-\[
-\boxed{
-\text{Make the model prefer what humans preferred}
-}
-\]
+More precisely, training pushes the policy to move toward the chosen response more than it moves toward the rejected one:
 
-More precisely:
+$$
+\frac{\pi_\theta(y_w \mid x)}{\pi_{ref}(y_w \mid x)} \;>\; \frac{\pi_\theta(y_l \mid x)}{\pi_{ref}(y_l \mid x)}
+$$
 
-\[
-\boxed{
-\frac{\pi_\theta(y_w|x)}
-{\pi_{ref}(y_w|x)}
->
-\frac{\pi_\theta(y_l|x)}
-{\pi_{ref}(y_l|x)}
-}
-\]
-
-The interesting part of DPO is how this simple preference idea is turned into a differentiable objective that can directly update an LLM.
+The interesting part of DPO is how this simple preference idea becomes a differentiable objective that directly updates an LLM.
 
 ---
 
 ## Reference
 
-Rafailov et al.,  
-**Direct Preference Optimization: Your Language Model is Secretly a Reward Model**
-
-[Paper](https://arxiv.org/abs/2305.18290)
+Rafailov et al., [*Direct Preference Optimization: Your Language Model is Secretly a Reward Model*](https://arxiv.org/abs/2305.18290)
