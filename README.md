@@ -32,10 +32,9 @@ Preference Data → DPO Objective → Updated LLM
 ---
 
 ## DPO Objective
-
 The core DPO loss is:
 
-\[
+$$
 \mathcal{L}_{DPO}
 =
 -\mathbb{E}
@@ -54,7 +53,23 @@ The core DPO loss is:
 \right]
 \right)
 \right]
-\]
+$$
+
+### What does each term mean?
+
+| Term | Meaning |
+|---|---|
+| $x$ | Prompt |
+| $y_w$ | Chosen / preferred response |
+| $y_l$ | Rejected response |
+| $\pi_\theta$ | Trainable policy model |
+| $\pi_{ref}$ | Frozen reference model |
+| $\beta$ | Controls the strength of the preference objective |
+| $\sigma$ | Sigmoid function |
+| $\mathcal{L}_{DPO}$ | DPO loss |
+
+The reference model provides a baseline, while the policy model is updated during training.
+
 
 ### What does each term mean?
 
